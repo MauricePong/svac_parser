@@ -116,11 +116,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\src\head.h" />
-    <ClInclude Include="..\src\ps_parser\ps_parser.h" />
+    <ClInclude Include="..\src\ps_parser.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\main.cpp" />
-    <ClCompile Include="..\src\ps_parser\ps_parser.cpp" />
+    <ClCompile Include="..\src\ps_parser.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

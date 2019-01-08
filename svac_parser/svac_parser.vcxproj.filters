@@ -18,15 +18,15 @@
     <ClInclude Include="..\src\head.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\ps_parser\ps_parser.h">
+    <ClInclude Include="..\src\ps_parser.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\ps_parser\ps_parser.cpp">
+    <ClCompile Include="..\src\main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\main.cpp">
+    <ClCompile Include="..\src\ps_parser.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
