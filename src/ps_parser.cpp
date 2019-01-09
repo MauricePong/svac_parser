@@ -42,7 +42,6 @@ void PsParser::RTPWrite(char * pBuffer, unsigned int sz)
 
 pes_tuple PsParser::pes_payload()
 {
-
 	if (m_status == ps_padding)
 	{
 		for (; m_nPESIndicator < m_nPSWrtiePos; m_nPESIndicator++)
@@ -81,7 +80,7 @@ pes_tuple PsParser::pes_payload()
 			m_pes = (pes_header_t*)(m_pPSBuffer + m_nPESIndicator);
 			if (is_psm_header(m_psm))
 			{
-				m_status = ps_psm;//³åµôs_sh×´Ì¬
+				m_status = ps_psm;//å†²æŽ‰s_shçŠ¶æ€
 				break;
 			}
 			if (is_pes_header(m_pes))
@@ -105,7 +104,7 @@ pes_tuple PsParser::pes_payload()
 	}
 	if (m_status == ps_pes)
 	{
-		//Ñ°ÕÒÏÂÒ»¸öpes »òÕß ps
+		//å¯»æ‰¾ä¸‹ä¸€ä¸ªpes æˆ–è€… ps
 		unsigned short PES_packet_length = ntohs(m_pes->PES_packet_length);
 		if ((m_nPESIndicator + PES_packet_length + sizeof(pes_header_t)) < m_nPSWrtiePos)
 		{
