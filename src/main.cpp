@@ -8,8 +8,10 @@ int main(int argc, char *argv[])
 	//}
 	//const char * inputfile = argv[1];
 	//const char * outputfile = argv[2];
-	const char * inputfile = "../resource/test.svac";
-	const char * outputfile = "../resource/svac2.videoes";
+	//const char * inputfile = "../resource/test.svac";
+	//const char * outputfile = "../resource/svac2.videoes";
+	const char * inputfile = "../resource/test01.ps";
+	const char * outputfile = "../resource/video.h264";
 	bool psexit = false;
 	FILE *infd, *outfd;
 	char ps_buf[1024] = {0};
@@ -26,15 +28,25 @@ int main(int argc, char *argv[])
 	}
 
 	PsParser * ps = new PsParser();
-	fread(pfptr, 1, 1024, infd);
-
+	naked_tuple val;
+	int i = 0;
+	int j = 0;
+	size_t len = 0;
 	while (!psexit) {
-		//ps->PSWrite(pfptr,);
-
+		if ((len = fread(pfptr, 1, 1024, infd)) ==  0) {
+			break;
+		}
+		cout << "read:" << ++j << " times : " << len << "byte" << endl;
+		ps->PSWrite(pfptr, 1024);
+		val = ps->naked_payload();
+		if ((true == get<0>(val)) && (0xE0 == get<1>(val))) {
+			fwrite(get<4>(val), 1, len, outfd);
+			cout << "write:" << ++i<<" times : "<<len<<"byte"<< endl;
+		}
 	}
-
-
 	fclose(infd);
 	fclose(outfd);
+	delete ps;
+	while (1);
 	return 0;
 }

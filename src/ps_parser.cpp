@@ -1,12 +1,14 @@
 #include "ps_parser.h"
 PsParser::PsParser()
 {
+	cout << "ps parser start.." << endl;
 	m_status = ps_padding;
 	m_nESLength = m_nPESIndicator = m_nPSWrtiePos = m_nPESLength = 0;
 }
 
 PsParser::~PsParser()
 {
+	cout << "ps parser end.." << endl;
 }
 
 void PsParser::PSWrite(char * pBuffer, unsigned int sz)
