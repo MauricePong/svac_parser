@@ -2,8 +2,8 @@
 PsParser::PsParser()
 {
 	cout << "ps parser start.." << endl;
-	m_status = ps_padding;
-	m_nESLength = m_nPESIndicator = m_nPSWrtiePos = m_nPESLength = 0;
+	psbuf = buf;
+	pos = 0;
 }
 
 PsParser::~PsParser()
@@ -11,173 +11,225 @@ PsParser::~PsParser()
 	cout << "ps parser end.." << endl;
 }
 
-void PsParser::PSWrite(char * pBuffer, unsigned int sz)
+int PsParser::jump(FILE *avfp)
 {
-	if (m_nPSWrtiePos + sz < MAX_PS_LENGTH)
-	{
-		memcpy((m_pPSBuffer + m_nPSWrtiePos), pBuffer, sz);
-		m_nPSWrtiePos += sz;
+	int ret = 0;
+	psbuf += 4;pos += 4;
+	if ((ret = readNext(avfp)) < 0) {
+		return ret;
 	}
-	else
+	while (!(psbuf[0] == 0
+		&& psbuf[1] == 0
+		&& psbuf[2] == 1
+		&& (psbuf[3] >= 0xb8
+			|| psbuf[3] == 0xb1)))
 	{
-		m_status = ps_padding;
-		m_nESLength = m_nPESIndicator = m_nPSWrtiePos = m_nPESLength = 0;
+		psbuf++;pos++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
+		}
 	}
+	return ret;
 }
 
-void PsParser::RTPWrite(char * pBuffer, unsigned int sz)
+int PsParser::getEs(FILE *avfp,unsigned char * esbuf, int &len)
 {
-	char* data = (pBuffer + sizeof(RTP_header_t));
-	unsigned int length = sz - sizeof(RTP_header_t);
-	if (m_nPSWrtiePos + length < MAX_PS_LENGTH)
-	{
-		memcpy((m_pPSBuffer + m_nPSWrtiePos), data, length);
-		m_nPSWrtiePos += length;
-	}
-	else
-	{
-		m_status = ps_padding;
-		m_nESLength = m_nPESIndicator = m_nPSWrtiePos = m_nPESLength = 0;
+	int ret = 0;
+	int i = 0;
+	int j = 0;
+	int choicenum = 0;
+	ctx.original_stuff_length = 0;
+	int n = 0;
+	psbuf += 3;
+	pos += 3;
+	if ((ret = readNext(avfp)) < 0) {
+		return ret;
 	}
 
-}
+	ctx.stream_id = psbuf[0];
+	ctx.PES_packet_length = (psbuf[1] << 8) + psbuf[2];
+	psbuf += 3;
+	pos += 3;
+	if ((ret = readNext(avfp)) < 0) {
+		return ret;
+	}
 
-pes_tuple PsParser::pes_payload()
-{
-	if (m_status == ps_padding)
+	ctx.PTS_DTS_flags = (psbuf[1] >> 6) & 0x03;
+	ctx.ESCR_flag = psbuf[1] & (0x01 << 5);
+	ctx.ES_rate_flag = psbuf[1] & (0x01 << 4);
+	ctx.DSM_trick_mode_flag = psbuf[1] & (0x01 << 3);
+	ctx.additional_copy_info_flag = psbuf[1] & (0x01 << 2);
+	ctx.PES_CRC_flag = psbuf[1] & (0x01 << 1);
+	ctx.PES_extension_flag = psbuf[1] & 0x01;
+	ctx.PES_header_data_length = psbuf[2];
+	psbuf += 3;
+	pos += 3;
+	n += 3;
+	if ((ret = readNext(avfp)) < 0) {
+		return ret;
+	}
+	//printf("%0x\t%0x\t%0x\n",psbuf[0],psbuf[1],psbuf[2]);
+	if ((ctx.PTS_DTS_flags == 0x02)|| (ctx.PTS_DTS_flags == 0x03))
 	{
-		for (; m_nPESIndicator < m_nPSWrtiePos; m_nPESIndicator++)
+		for (i = 0; i < (ctx.PTS_DTS_flags -0x01)*5; i++)
 		{
-			m_ps = (ps_header_t*)(m_pPSBuffer + m_nPESIndicator);
-			if (is_ps_header(m_ps))
-			{
-				m_status = ps_ps;
-				break;
+			psbuf++;pos++;n++;choicenum++;
+			if ((ret = readNext(avfp)) < 0) {
+				return ret;
 			}
 		}
 	}
-	if (m_status == ps_ps)
+
+	if (ctx.ESCR_flag != 0)
 	{
-		for (; m_nPESIndicator < m_nPSWrtiePos; m_nPESIndicator++)
+		for (i = 0; i < 6; i++)
 		{
-			m_sh = (sh_header_t*)(m_pPSBuffer + m_nPESIndicator);
-			m_pes = (pes_header_t*)(m_pPSBuffer + m_nPESIndicator);
-			if (is_sh_header(m_sh))
-			{
-				m_status = ps_sh;
-				break;
-			}
-			else if (is_pes_header(m_pes))
-			{
-				m_status = ps_pes;
-				break;
+			psbuf++; pos++; n++; choicenum++;
+			if ((ret = readNext(avfp)) < 0) {
+				return ret;
 			}
 		}
 	}
-	if (m_status == ps_sh)
+
+	if (ctx.ES_rate_flag != 0)
 	{
-		for (; m_nPESIndicator < m_nPSWrtiePos; m_nPESIndicator++)
+		for (i = 0; i < 3; i++)
 		{
-			m_psm = (psm_header_t*)(m_pPSBuffer + m_nPESIndicator);
-			m_pes = (pes_header_t*)(m_pPSBuffer + m_nPESIndicator);
-			if (is_psm_header(m_psm))
-			{
-				m_status = ps_psm;//冲掉s_sh状态
-				break;
-			}
-			if (is_pes_header(m_pes))
-			{
-				m_status = ps_pes;
-				break;
+			psbuf++; pos++; n++; choicenum++;
+			if ((ret = readNext(avfp)) < 0) {
+				return ret;
 			}
 		}
 	}
-	if (m_status == ps_psm)
+
+	if (ctx.DSM_trick_mode_flag != 0)
 	{
-		for (; m_nPESIndicator < m_nPSWrtiePos; m_nPESIndicator++)
-		{
-			m_pes = (pes_header_t*)(m_pPSBuffer + m_nPESIndicator);
-			if (is_pes_header(m_pes))
-			{
-				m_status = ps_pes;
-				break;
-			}
+		psbuf++; pos++; n++; choicenum++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
 		}
 	}
-	if (m_status == ps_pes)
+
+	if (ctx.additional_copy_info_flag != 0)
 	{
-		//寻找下一个pes 或者 ps
-		unsigned short PES_packet_length = ntohs(m_pes->PES_packet_length);
-		if ((m_nPESIndicator + PES_packet_length + sizeof(pes_header_t)) < m_nPSWrtiePos)
+		psbuf++; pos++; n++; choicenum++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
+		}
+	}
+
+	if (ctx.PES_CRC_flag != 0)
+	{
+		psbuf += 2; pos += 2; n++; choicenum++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
+		}
+	}
+
+	if (ctx.PES_extension_flag != 0)
+	{
+		ctx.PES_private_data_flag = psbuf[0] & (0x01 << 7);
+		ctx.pack_header_field_flag = psbuf[0] & (0x01 << 6);
+		ctx.program_packet_sequence_counter_flag = psbuf[0] & (0x01 << 5);
+		ctx.PSTD_buffer_flag = psbuf[0] & (0x01 << 4);
+		ctx.PES_extension_flag_2 = psbuf[0] & 0x01;
+		psbuf++; pos++; n++; choicenum++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
+		}
+
+		if (ctx.PES_private_data_flag != 0)
 		{
-			char* next = (m_pPSBuffer + m_nPESIndicator + sizeof(pes_header_t) + PES_packet_length);
-			pes_header_t* pes = (pes_header_t*)next;
-			ps_header_t* ps = (ps_header_t*)next;
-			m_nPESLength = PES_packet_length + sizeof(pes_header_t);
-			memcpy(m_pPESBuffer, m_pes, m_nPESLength);
-			if (is_pes_header(pes) || is_ps_header(ps))
+			for (i = 0; i < 16; i++)
 			{
-				PSStatus status = ps_padding;
-				if (is_ps_header(ps))
-				{
-					status = m_status = ps_ps;
+				psbuf++; pos++; n++; choicenum++;
+				if ((ret = readNext(avfp)) < 0) {
+					return ret;
 				}
-				else
-				{
-					status = pes_type(pes);
-				}
-				int remain = m_nPSWrtiePos - (next - m_pPSBuffer);
-				memcpy(m_pPSBuffer, next, remain);
-				m_nPSWrtiePos = remain; m_nPESIndicator = 0;
-				m_ps = (ps_header_t*)m_pPSBuffer;
-				m_pes = (pes_header_t*)m_pPSBuffer;
-				return pes_tuple(true, status, (pes_header_t*)m_pPESBuffer);
 			}
-			else
+		}
+
+		if (ctx.pack_header_field_flag != 0)
+		{
+			psbuf++; pos++; n++; choicenum++;
+			if ((ret = readNext(avfp)) < 0) {
+				return ret;
+			}
+			return ret;
+		}
+
+		if (ctx.program_packet_sequence_counter_flag != 0)
+		{
+			ctx.original_stuff_length = psbuf[1] & 0x3f;
+			psbuf += 2; pos += 2; n += 2; choicenum += 2;
+			if ((ret = readNext(avfp)) < 0) {
+				return ret;
+			}
+		}
+
+		if (ctx.PSTD_buffer_flag != 0)
+		{
+			psbuf += 2; pos += 2; n += 2; choicenum += 2;
+			ret = readNext(avfp);
+			if (ret < 0) {
+				return ret;
+			}
+		}
+
+		if (ctx.PES_extension_flag_2 != 0)
+		{
+			ctx.PES_extension_field_length = psbuf[0] & 0x7f;
+			psbuf++; pos++; n++; choicenum++;
+			if ((ret = readNext(avfp)) < 0) {
+				return ret;
+			}
+			for (i = 0; i < ctx.PES_extension_field_length; i++)
 			{
-				m_status = ps_padding;
-				m_nPESIndicator = m_nPSWrtiePos = 0;
+				psbuf++; pos++; n++; choicenum++;
+				if ((ret = readNext(avfp)) < 0) {
+					return ret;
+				}
 			}
 		}
 	}
-	return pes_tuple(false, ps_padding, NULL);
+
+	j = ctx.PES_header_data_length - choicenum;
+	for (i = 0; i < j; i++)
+	{
+		psbuf++; pos++; n++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
+		}
+	}
+
+	len = ctx.PES_packet_length - n;
+	for (i = 0; i < len; i++)
+	{
+		//fwrite(psbuf, 1, 1, fp);
+		esbuf[i] = *psbuf;
+		psbuf++; pos++;
+		if ((ret = readNext(avfp)) < 0) {
+			return ret;
+		}
+	}
+	return ret;
 }
 
-naked_tuple PsParser::naked_payload()
+int PsParser::readNext(FILE *avfp)
 {
-	naked_tuple tuple = naked_tuple(false, 0, 0, 0, NULL, 0);
-	do
+	if ((pos < 1021)||(pos >1024)) {
+		return 0;
+	}
+	for (int i = 0; i < (1024 - pos); i++) {
+		buf[i] = psbuf[i];
+	}
+	if (fread(buf + (1024 - pos), 1, pos, avfp) <= 0)
 	{
-		pes_tuple t = pes_payload();
-		if (!get<0>(t))
-		{
-			break;
-		}
-		PSStatus status = get<1>(t);
-		pes_header_t* pes = get<2>(t);
-		optional_pes_header* option = (optional_pes_header*)((char*)pes + sizeof(pes_header_t));
-		if (option->PTS_DTS_flags != 2 && option->PTS_DTS_flags != 3 && option->PTS_DTS_flags != 0)
-		{
-			break;
-		}
-		unsigned __int64 pts = get_pts(option);
-		unsigned __int64 dts = get_dts(option);
-		unsigned char stream_id = pes->stream_id;
-		unsigned short PES_packet_length = ntohs(pes->PES_packet_length);
-		char* pESBuffer = ((char*)option + sizeof(optional_pes_header) + option->PES_header_data_length);
-		int nESLength = PES_packet_length - (sizeof(optional_pes_header) + option->PES_header_data_length);
-		memcpy(m_pESBuffer + m_nESLength, pESBuffer, nESLength);
-		m_nESLength += nESLength;
-		if (stream_id == 0xE0 && (status == ps_ps || status == ps_pes_audio))
-		{
-			tuple = naked_tuple(true, 0xE0, pts, dts, m_pESBuffer, m_nESLength);
-			m_nESLength = 0;
-		}
-		else if (stream_id == 0xC0)
-		{
-			tuple = naked_tuple(true, 0xC0, pts, dts, m_pESBuffer, m_nESLength);
-			m_nESLength = 0;
-		}
-	} while (false);
-	return tuple;
+		return -1;
+	}
+	psbuf = buf;
+	pos = 0;
+	return 0;
 }
+
+

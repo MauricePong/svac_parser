@@ -12,41 +12,70 @@ int main(int argc, char *argv[])
 	//const char * outputfile = "../resource/svac2.videoes";
 	const char * inputfile = "../resource/test01.ps";
 	const char * outputfile = "../resource/video.h264";
-	bool psexit = false;
-	FILE *infd, *outfd;
-	char ps_buf[1024] = {0};
-	char *pfptr = ps_buf;
-
-	if ((infd = fopen(inputfile, "rb")) == NULL) {
-		fprintf(stderr, "%s  was not open",inputfile);
+	int psexit = 0;
+	FILE *infp, *outfp;
+	unsigned char esbuf[0x10000] = { 0 };
+	int eslen = 0;
+	if ((infp = fopen(inputfile, "rb")) == NULL) {
+		fprintf(stderr, "%s  was not open", inputfile);
 		return -1;
 	}
 
-	if ((outfd = fopen(outputfile, "wb+")) == NULL) {
+	if ((outfp = fopen(outputfile, "wb+")) == NULL) {
 		fprintf(stderr, "%s  was not open", outputfile);
 		return -1;
 	}
 
-	PsParser * ps = new PsParser();
-	naked_tuple val;
-	int i = 0;
-	int j = 0;
-	size_t len = 0;
-	while (!psexit) {
-		if ((len = fread(pfptr, 1, 1024, infd)) ==  0) {
-			break;
-		}
-		cout << "read:" << ++j << " times : " << len << "byte" << endl;
-		ps->PSWrite(pfptr, 1024);
-		val = ps->naked_payload();
-		if ((true == get<0>(val)) && (0xE0 == get<1>(val))) {
-			fwrite(get<4>(val), 1, len, outfd);
-			cout << "write:" << ++i<<" times : "<<len<<"byte"<< endl;
+	PsParser *ps = new PsParser();
+	if (fread(ps->psbuf, 1, 1024, infp) == 0) {
+		::fclose(infp);
+		::fclose(outfp);
+		cout << "fread erro" << endl;
+		delete ps;
+		return -1;
+	}
+
+	while (0 == psexit) {
+		if ((ps->psbuf[0] == 0
+			&& ps->psbuf[1] == 0
+			&& ps->psbuf[2] == 1
+			&& ps->psbuf[3] == 0xB1)) {
+			fwrite(ps->psbuf, 1, 4, outfp);
+			ps->psbuf += 4; ps->pos += 4;
+			//return;
+		}else if (ps->psbuf[0] == 0
+			&& ps->psbuf[1] == 0
+			&& ps->psbuf[2] == 1
+			&& ps->psbuf[3] == 0xE0) {
+			psexit = ps->getEs(infp, esbuf, eslen);
+			int a = eslen / 1024;
+			int b = eslen % 1024;
+			for (int i = 0; i < a; i++) {
+				fwrite(&esbuf[1024*i], 1, 1024, outfp);
+			}
+			if (b != 0) {
+				fwrite(&esbuf[1024*a], 1, b, outfp);
+			}
+		}// end else if	001e0
+		else if (ps->psbuf[0] == 0
+			&& ps->psbuf[1] == 0
+			&& ps->psbuf[2] == 1
+			&& ps->psbuf[3] == 0xC0) {
+			//psexit = ps->jump(infp);
+			//psexit = ps->getEs(infp, esbuf, eslen);
+			psexit = ps->jump(infp);
+
+		}// end else if	001c0
+		else
+		{
+			cout << "jump" << endl;
+			psexit = ps->jump(infp);
 		}
 	}
-	fclose(infd);
-	fclose(outfd);
+
+	::fclose(infp);
+	::fclose(outfp);
 	delete ps;
-	while (1);
+	Sleep(10000);
 	return 0;
 }
